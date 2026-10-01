@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>WEP 2026 Teacher Mentor Portal</title>
+  <title>WEP 2026 Staff Portal</title>
+
   <style>
     :root {
       --navy: #17365d;
@@ -52,6 +53,7 @@
     .organisation h2 { color: var(--navy); }
     .muted, .hint { color: var(--muted); }
     .hint { font-size: .9rem; }
+    .view-field { margin-bottom: 16px; }
 
     label {
       display: block;
@@ -132,9 +134,45 @@
     }
 
     .student strong { display: block; }
-    .student-note { margin-top: 10px; }
-    .guidance { background: #fff7da; padding: 14px; border-radius: 8px; }
-    .empty { color: var(--muted); padding: 18px 0; }
+
+    .guidance {
+      background: #fff7da;
+      padding: 14px;
+      border-radius: 8px;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    caption {
+      text-align: left;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th { background: var(--navy); color: white; }
+    td { overflow-wrap: anywhere; }
+    .class-table { min-width: 560px; }
+    details { margin-top: 10px; }
+
+    summary {
+      cursor: pointer;
+      color: var(--navy);
+      font-weight: bold;
+    }
+
+    details dl { margin-top: 10px; }
 
     @media (max-width: 600px) {
       h1 { font-size: 1.4rem; }
@@ -143,10 +181,11 @@
     }
   </style>
 </head>
+
 <body>
   <header>
     <div class="wrap">
-      <h1>WEP 2026 Teacher Mentor Portal</h1>
+      <h1>WEP 2026 Staff Portal</h1>
       <div>St Andrew’s School (Secondary)</div>
       <div>Organisation contacts, student allocations and attachment guidance</div>
     </div>
@@ -158,7 +197,7 @@
     </noscript>
 
     <section id="loginPanel" class="panel">
-      <h2>Teacher mentor access</h2>
+      <h2>Staff access</h2>
       <p class="muted">Enter the shared password to view WEP information.</p>
 
       <form id="loginForm">
@@ -181,7 +220,15 @@
 
     <section id="portal" hidden>
       <div class="panel">
-        <label for="mentor">Select your name</label>
+        <div class="view-field">
+          <label for="viewMode">View by</label>
+          <select id="viewMode">
+            <option value="mentor">Teacher Mentor</option>
+            <option value="class">Form Teacher — Class</option>
+          </select>
+        </div>
+
+        <label id="selectionLabel" for="mentor">Select your name</label>
         <select id="mentor">
           <option value="">Choose a teacher mentor</option>
         </select>
@@ -214,9 +261,9 @@
       let busy = false;
       let loadedAt = "";
 
-      function element(tag, text, className) {
+      function element(tag, content, className) {
         const node = document.createElement(tag);
-        if (text !== undefined) node.textContent = text;
+        if (content !== undefined) node.textContent = content;
         if (className) node.className = className;
         return node;
       }
@@ -261,7 +308,32 @@
         $("refreshButton").disabled = value;
         $("lockButton").disabled = value;
         $("mentor").disabled = value;
+        $("viewMode").disabled = value;
         $("password").disabled = value;
+      }
+
+      function populateSelections(previousSelection = "") {
+        const isClass = $("viewMode").value === "class";
+        const key = isClass ? "className" : "teacherMentor";
+
+        $("selectionLabel").textContent =
+          isClass ? "Select your class" : "Select your name";
+
+        const choices = [...new Set(
+          records.map(row => text(row[key])).filter(Boolean)
+        )].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+
+        $("mentor").replaceChildren(new Option(
+          isClass ? "Choose a class" : "Choose a teacher mentor", ""
+        ));
+
+        choices.forEach(value => {
+          $("mentor").appendChild(new Option(value, value));
+        });
+
+        if (choices.includes(previousSelection)) {
+          $("mentor").value = previousSelection;
+        }
       }
 
       function lockPortal(message = "") {
@@ -269,9 +341,8 @@
         passwordInMemory = "";
         loadedAt = "";
         $("password").value = "";
-        $("mentor").replaceChildren(
-          new Option("Choose a teacher mentor", "")
-        );
+        $("viewMode").value = "mentor";
+        populateSelections();
         $("results").replaceChildren();
         $("summary").textContent = "";
         $("status").textContent = "";
@@ -317,26 +388,11 @@
             throw new Error("DATA_UNAVAILABLE");
           }
 
-          const previousMentor = $("mentor").value;
+          const previousSelection = $("mentor").value;
           records = result.records;
           passwordInMemory = enteredPassword;
           $("password").value = "";
-
-          const names = [...new Set(
-            records.map(row => text(row.teacherMentor)).filter(Boolean)
-          )].sort((a, b) => a.localeCompare(b));
-
-          $("mentor").replaceChildren(
-            new Option("Choose a teacher mentor", "")
-          );
-
-          names.forEach(name => {
-            $("mentor").appendChild(new Option(name, name));
-          });
-
-          if (names.includes(previousMentor)) {
-            $("mentor").value = previousMentor;
-          }
+          populateSelections(previousSelection);
 
           loadedAt = new Date().toLocaleString("en-SG", {
             timeZone: "Asia/Singapore"
@@ -372,8 +428,126 @@
         }
       }
 
+      function renderClass() {
+        const className = $("mentor").value;
+
+        if (!className) {
+          $("summary").textContent =
+            "Select a class to view its students, organisations and teacher mentors.";
+          return;
+        }
+
+        const students = records
+          .filter(row => text(row.className) === className)
+          .slice()
+          .sort((a, b) =>
+            text(a.serialNumber).localeCompare(
+              text(b.serialNumber), "en", { numeric: true }
+            ) ||
+            text(a.studentName).localeCompare(text(b.studentName))
+          );
+
+        const organisationCount = new Set(
+          students.map(row => text(row.organisation)).filter(Boolean)
+        ).size;
+
+        $("summary").textContent =
+          className + " — " + students.length + " student record(s), " +
+          organisationCount + " organisation(s)";
+
+        const panel = element("section", undefined, "panel");
+        panel.appendChild(element(
+          "p",
+          "Open a student's attachment details for contact information and guidance.",
+          "hint"
+        ));
+
+        const wrap = element("div", undefined, "table-wrap");
+        wrap.tabIndex = 0;
+        wrap.setAttribute("role", "region");
+        wrap.setAttribute(
+          "aria-label",
+          "Class allocations; scroll horizontally on smaller screens"
+        );
+
+        const table = element("table", undefined, "class-table");
+        table.appendChild(element(
+          "caption", "WEP allocations — " + className
+        ));
+
+        const head = element("thead");
+        const headings = element("tr");
+
+        ["S/N", "Student", "Organisation", "Teacher mentor"]
+          .forEach(label => {
+            const heading = element("th", label);
+            heading.scope = "col";
+            headings.appendChild(heading);
+          });
+
+        head.appendChild(headings);
+        table.appendChild(head);
+
+        const body = element("tbody");
+
+        students.forEach(student => {
+          const row = element("tr");
+          row.appendChild(element("td", text(student.serialNumber)));
+          row.appendChild(element("td", text(student.studentName)));
+
+          const organisation = element(
+            "td", text(student.organisation) || "Not provided"
+          );
+
+          const details = element("details");
+          details.appendChild(element("summary", "Attachment details"));
+
+          const list = element("dl");
+
+          [
+            ["studentEmail", "Student email", "email"],
+            ["address", "Organisation address"],
+            ["contactPerson", "Contact person"],
+            ["designation", "Designation"],
+            ["contactEmail", "Contact email", "email"],
+            ["contactNumber", "Phone", "phone"],
+            ["workAreas", "Possible areas of work"],
+            ["studentRemarks", "Remarks for students"],
+            ["mentorRemarks", "Remarks for teacher mentor"]
+          ].forEach(([key, label, kind]) => {
+            addField(list, label, student[key], kind);
+          });
+
+          if (list.children.length) {
+            details.appendChild(list);
+          } else {
+            details.appendChild(element(
+              "p", "No additional information provided."
+            ));
+          }
+
+          organisation.appendChild(details);
+          row.appendChild(organisation);
+          row.appendChild(element(
+            "td", text(student.teacherMentor) || "Not provided"
+          ));
+          body.appendChild(row);
+        });
+
+        table.appendChild(body);
+        wrap.appendChild(table);
+        panel.appendChild(wrap);
+        $("results").appendChild(panel);
+      }
+
       function renderMentor() {
         $("results").replaceChildren();
+
+        if ($("viewMode").value === "class") {
+          renderClass();
+          return;
+        }
+
         const mentor = $("mentor").value;
 
         if (!mentor) {
@@ -420,7 +594,6 @@
           ["contactNumber", "Phone", "phone"]
         ];
 
-        // Keep different contact profiles together with their student names.
         const profiles = new Map();
 
         students.forEach(student => {
@@ -428,7 +601,10 @@
             ([key]) => optional(student[key])
           );
           const key = JSON.stringify(values);
-          if (!profiles.has(key)) profiles.set(key, { values, students: [] });
+
+          if (!profiles.has(key)) {
+            profiles.set(key, { values, students: [] });
+          }
           profiles.get(key).students.push(student);
         });
 
@@ -441,19 +617,25 @@
             block.appendChild(element(
               "p",
               "Listed for: " + profile.students.map(student =>
-                text(student.studentName) + " (" + text(student.className) + ")"
+                text(student.studentName) +
+                " (" + text(student.className) + ")"
               ).join(", "),
               "hint"
             ));
           }
 
           const list = element("dl");
+
           contactFields.forEach(([, label, kind], index) => {
             addField(list, label, profile.values[index], kind);
           });
 
-          if (list.children.length) block.appendChild(list);
-          else block.appendChild(element("p", "Contact details not provided."));
+          if (list.children.length) {
+            block.appendChild(list);
+          } else {
+            block.appendChild(element("p", "Contact details not provided."));
+          }
+
           card.appendChild(block);
         });
 
@@ -468,6 +650,7 @@
 
         guidanceFields.forEach(([key, label]) => {
           const values = students.map(student => optional(student[key]));
+
           if (values[0] && values.every(value => value === values[0])) {
             commonKeys.add(key);
             addField(sharedGuidance, label, values[0]);
@@ -486,8 +669,11 @@
           text(a.studentName).localeCompare(text(b.studentName))
         ).forEach(student => {
           const block = element("div", undefined, "student");
+
           block.appendChild(element("strong", text(student.studentName)));
-          block.appendChild(element("div", text(student.className), "muted"));
+          block.appendChild(element(
+            "div", text(student.className), "muted"
+          ));
 
           const details = element("dl");
           addField(details, "Student email", student.studentEmail, "email");
@@ -512,6 +698,11 @@
       });
 
       $("mentor").addEventListener("change", renderMentor);
+
+      $("viewMode").addEventListener("change", () => {
+        populateSelections();
+        renderMentor();
+      });
 
       $("refreshButton").addEventListener("click", () => {
         if (passwordInMemory) loadData(passwordInMemory, true);
